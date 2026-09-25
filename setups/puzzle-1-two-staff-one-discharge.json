@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seed": 123456789,
+  "round": 3,
+  "phase": "work",
+  "patients": { "waiting": ["P11", "P2", "P4", "P8"] },
+  "staff": { "room": ["scheduler", "consultant"] },
+  "wear": { "R": 1, "Y": 5, "B": 4 },
+  "cubes": { "placed": ["P2:C"], "supply": 6 },
+  "dice": {
+    "pool": ["R1", "Y1", "Y2", "B1", "B2"],
+    "upgraded": ["Y", "B"],
+    "values": { "R1": 4, "Y1": 5, "Y2": 2, "B1": 1, "B2": 3 }
+  }
+}

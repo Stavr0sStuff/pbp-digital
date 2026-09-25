@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 246813579,
+  "round": 2,
+  "phase": "admission",
+  "patients": { "waiting": ["P3", "P10"], "arrival": "P6" },
+  "staff": { "room": ["specialist", "scheduler"] },
+  "wear": { "R": 3, "Y": 4, "B": 3 },
+  "cubes": { "placed": [], "supply": 7 },
+  "dice": { "pool": ["R1", "Y1", "B1"], "upgraded": [] }
+}

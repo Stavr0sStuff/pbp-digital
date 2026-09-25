@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seed": 987654321,
+  "round": 2,
+  "phase": "work",
+  "patients": { "waiting": ["P1", "P2", "P8"] },
+  "staff": { "room": ["nurse", "specialist"] },
+  "wear": { "R": 4, "Y": 4, "B": 4 },
+  "cubes": { "placed": ["P2:C"], "supply": 6 },
+  "dice": {
+    "pool": ["R1", "Y1", "B1", "B2"],
+    "upgraded": ["B"],
+    "values": { "R1": 2, "Y1": 5, "B1": 1, "B2": 4 }
+  }
+}

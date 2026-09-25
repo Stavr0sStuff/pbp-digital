@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seed": 7003,
+  "round": 6,
+  "phase": "admission",
+  "patients": {
+    "waiting": ["P3", "P10"],
+    "discard": ["P1", "P2", "P4", "P5", "P9"],
+    "arrival": "P6"
+  },
+  "staff": { "room": ["specialist", "scheduler"], "removed": ["labtech"] },
+  "wear": { "R": 3, "Y": 4, "B": 3 },
+  "cubes": { "placed": [], "supply": 7 },
+  "dice": { "pool": ["R1", "Y1", "B1"], "upgraded": [] }
+}

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "seed": 7005,
+  "round": 8,
+  "phase": "work",
+  "patients": {
+    "waiting": ["P11", "P2", "P4", "P8"],
+    "discard": ["P1", "P3", "P5", "P6", "P9", "P10"]
+  },
+  "staff": { "room": ["scheduler", "consultant"], "removed": ["labtech"] },
+  "wear": { "R": 1, "Y": 4, "B": 4 },
+  "cubes": { "placed": ["P2:C"], "supply": 6 },
+  "dice": {
+    "pool": ["R1", "Y1", "Y2", "B1", "B2"],
+    "upgraded": ["Y", "B"],
+    "values": { "R1": 4, "Y1": 5, "Y2": 2, "B1": 1, "B2": 3 }
+  }
+}

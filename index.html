@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Please Be Patient</title>
+    <meta
+      name="description"
+      content="A local digital tabletop for the solitaire dice game Please Be Patient."
+    />
+    <link rel="stylesheet" href="styles.css?v=20260924-03" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark">✚</div>
+          <div>
+            <h1>Please Be Patient</h1>
+          </div>
+        </div>
+        <div class="top-instructions">
+          <div id="table-banner" class="top-banner"></div>
+          <div id="primary-action" class="top-primary-action"></div>
+        </div>
+        <div class="topbar-actions">
+          <span id="discharged-count" class="pill discharged-pill" aria-live="polite">Patients Discharged: 0</span>
+          <span id="round-badge" class="pill">Not started</span>
+          <span class="pill seed-pill">Seed <span id="seed-value">—</span></span>
+          <button id="load-setup-button" class="button button-quiet button-small" data-action="open-load-setup" hidden>Load setup</button>
+          <button class="button button-quiet reset-button" data-action="new-game" aria-label="New game" title="New game">↻</button>
+        </div>
+      </header>
+
+      <section class="stepper" aria-label="Round steps">
+        <div data-step="admission"><span>01</span> Admission</div>
+        <div data-step="diagnosis"><span>02</span> Diagnosis</div>
+        <div data-step="work"><span>03</span> Work</div>
+        <div data-step="discharge"><span>04</span> Discharge</div>
+        <div data-step="closing"><span>05</span> Closing time</div>
+      </section>
+      <main class="board">
+        <aside class="left-decks">
+          <section class="deck-card staff-deck-card" aria-label="Staff Deck">
+            <img class="deck-image" src="assets/cards/staff-back.jpg?v=20260924-03" alt="Staff Deck" />
+            <span id="staff-deck-count" class="sr-only">5</span>
+          </section>
+          <section class="deck-card patient-deck-card" aria-label="Patient Deck">
+            <img class="deck-image" src="assets/cards/pbp-cards_13.jpg?v=20260924-03" alt="Patient Deck" />
+            <span id="patient-deck-count" class="deck-count-badge" aria-label="Patients left in deck">12 left</span>
+            <span id="discard-count" class="sr-only">0</span>
+            <span id="patient-deck-label" class="sr-only">face down</span>
+          </section>
+        </aside>
+
+        <section class="table-area">
+          <section class="staff-stage" aria-label="Staff Room">
+            <span id="staff-count" class="sr-only">0 / 2</span>
+            <div id="staff-room" class="staff-room"></div>
+          </section>
+
+          <section class="waiting-stage">
+            <span id="queue-count" class="sr-only">0</span>
+            <div id="waiting-room" class="waiting-room"></div>
+            <div id="patient-deck-preview" class="patient-deck-preview"></div>
+            <div id="admission-source" class="admission-source"></div>
+          </section>
+        </section>
+
+        <aside class="rail rail-right">
+          <div class="right-resources" aria-label="Dice and Treatment Cubes">
+            <section class="rail-card dice-card">
+              <div class="section-heading"><h3>Dice pool</h3><span id="dice-count" class="count-badge">0</span></div>
+              <div id="dice-tray" class="dice-tray"></div>
+              <p id="dice-hint" class="muted">Your dice will appear here.</p>
+              <label class="legal-zone-toggle" title="Highlight active ailment zones that at least one available die can treat.">
+                <input id="show-legal-zones" type="checkbox" />
+                <span>Show legal ailment zones</span>
+              </label>
+            </section>
+
+            <section class="rail-card supply-card">
+              <div class="section-heading"><h3>Treatment supply</h3><span id="cube-count" class="count-badge">7</span></div>
+              <div id="cube-supply" class="cube-supply"></div>
+              <p class="muted">Cubes on active ailments stay with patients between days.</p>
+            </section>
+          </div>
+
+          <section class="rail-card equipment-card">
+            <div class="section-heading"><h3>Equipment card</h3><span class="muted">wear</span></div>
+            <div id="equipment-card-visual" class="equipment-card-visual"></div>
+            <div id="work-actions" class="work-actions"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <dialog id="new-game-dialog" class="app-dialog" aria-labelledby="new-game-title">
+      <div class="dialog-content">
+        <h2 id="new-game-title">Start a new game</h2>
+        <p>Choose a random seed or enter one to replay a game.</p>
+        <label class="dialog-label" for="seed-input">Seed
+          <input id="seed-input" class="dialog-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0–4294967295" />
+        </label>
+        <p id="new-game-error" class="setup-error" role="alert" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" data-action="close-new-game">Cancel</button>
+          <button class="button button-quiet" data-action="new-game-random">Random seed</button>
+          <button class="button button-primary" data-action="new-game-seeded">Start with seed</button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="load-setup-dialog" class="app-dialog" aria-labelledby="load-setup-title">
+      <div class="dialog-content">
+        <h2 id="load-setup-title">Load a setup</h2>
+        <p>Choose a version 1 JSON setup file from this device.</p>
+        <label class="dialog-label" for="setup-file-input">Setup file
+          <input id="setup-file-input" class="dialog-input" type="file" accept=".json,application/json" />
+        </label>
+        <p id="setup-load-error" class="setup-error" role="alert" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" data-action="close-load-setup">Close</button>
+        </div>
+      </div>
+    </dialog>
+    <script src="app.js?v=20260924-03"></script>
+  </body>
+</html>
