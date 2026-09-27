@@ -54,6 +54,9 @@ let state;
 let selectedDieId = null;
 let showLegalZones = false;
 let gameRandom = Math.random;
+let undoHistory = [];
+let deferredUndoPoint = null;
+let deferredUndoLabel = null;
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
@@ -69,6 +72,90 @@ const shuffle = (items, random = gameRandom) => {
 const colorName = (color) => COLORS[color]?.name || color;
 const dieLabel = (die) => `${colorName(die.color)} ${die.value}`;
 const cubeKey = (patientId, zone) => `${patientId}:${zone}`;
+
+function captureUndoPoint() {
+  const snapshot = clone(state);
+  const hadAdmissionPreview = Number.isInteger(snapshot.admissionPreviewIndex) || snapshot.admissionDragging;
+  const hadWorkPreview = snapshot.pendingStaffActivation || snapshot.pendingWorkAction || snapshot.pendingTreatment || snapshot.staffAction;
+  snapshot.admissionPreviewIndex = null;
+  snapshot.admissionDragging = false;
+  snapshot.admissionDragPointerId = null;
+  snapshot.admissionDragOriginIndex = null;
+  snapshot.nurseDragging = false;
+  snapshot.nurseDragPointerId = null;
+  snapshot.nurseDragSource = null;
+  snapshot.nurseDragTarget = null;
+  snapshot.nurseDragPreviousDestination = null;
+  snapshot.staffAction = null;
+  snapshot.pendingStaffActivation = null;
+  snapshot.pendingWorkAction = null;
+  snapshot.pendingTreatment = null;
+  snapshot.rearrangeDragging = false;
+  snapshot.rearrangeDragPointerId = null;
+  snapshot.rearrangeDragSourceId = null;
+  snapshot.rearrangeDragOriginOrder = null;
+  snapshot.rearrangeDragTargetIndex = null;
+  snapshot.patientDeckDragging = false;
+  snapshot.patientDeckDragPointerId = null;
+  snapshot.patientDeckDragSourceId = null;
+  snapshot.patientDeckDragOriginOrder = null;
+  snapshot.patientDeckDragTargetIndex = null;
+  if (hadAdmissionPreview) snapshot.message = 'A new patient is arriving. Choose an end of the waiting room.';
+  else if (hadWorkPreview) snapshot.message = 'Select a die. Then click a highlighted Staff card, equipment action, or ailment.';
+  return { state: snapshot, selectedDieId };
+}
+
+function recordUndoPoint(label, point) {
+  if (!point) return;
+  undoHistory.push({ label, ...point });
+  renderUndoControl();
+}
+
+function clearUndoHistory() {
+  undoHistory = [];
+  deferredUndoPoint = null;
+  deferredUndoLabel = null;
+  renderUndoControl();
+}
+
+function markHiddenInformationReveal() {
+  clearUndoHistory();
+}
+
+function canUndo() {
+  if (!undoHistory.length || !state) return false;
+  return !Number.isInteger(state.admissionPreviewIndex)
+    && !state.staffAction
+    && !state.pendingStaffActivation
+    && !state.pendingWorkAction
+    && !state.pendingTreatment
+    && !state.admissionDragging
+    && !state.nurseDragging
+    && !state.rearrangeDragging
+    && !state.patientDeckDragging;
+}
+
+function renderUndoControl() {
+  const button = $('#undo-button');
+  if (!button) return;
+  button.disabled = !canUndo();
+  const latest = undoHistory[undoHistory.length - 1];
+  button.title = latest ? `Undo ${latest.label} since the latest reveal` : 'No decisions to undo since the latest reveal';
+}
+
+function undoLastDecision() {
+  if (!canUndo()) return;
+  const point = undoHistory.pop();
+  state = clone(point.state);
+  selectedDieId = point.selectedDieId;
+  clearThankYouDragState();
+  $('.nurse-drag-ghost')?.remove();
+  $('.admission-drag-ghost')?.remove();
+  document.body.classList.remove('nurse-dragging', 'admission-dragging');
+  state.message = `Undid ${point.label}.`;
+  logEvent('Undo', `${point.label} undone.`);
+  render();
+}
 
 function mulberry32(seed) {
   let value = seed >>> 0;
@@ -170,6 +257,7 @@ function newGame(seedValue) {
   nextState.staffOffer.push(nextState.staffDeck.pop(), nextState.staffDeck.pop());
   state = nextState;
   gameRandom = nextRandom;
+  clearUndoHistory();
   selectedDieId = null;
   showLegalZones = false;
   if (typeof legalZonesToggle !== 'undefined') legalZonesToggle.checked = false;
@@ -457,6 +545,7 @@ function installSetupJSON(text) {
   const candidate = parseSetupJSON(text);
   state = candidate.state;
   gameRandom = candidate.random;
+  clearUndoHistory();
   selectedDieId = null;
   showLegalZones = false;
   clearThankYouDragState();
@@ -538,6 +627,7 @@ function drawStaff() { return state.staffDeck.pop() || null; }
 
 function beginRound() {
   if (state.status !== 'playing') return;
+  const undoPoint = state.phase === 'closing' ? captureUndoPoint() : null;
   state.round += 1;
   state.phase = 'admission';
   state.message = 'A new patient is arriving. Choose an end of the waiting room.';
@@ -565,11 +655,13 @@ function beginRound() {
   }
   const needed = Math.min(state.patientDeck.length, state.waiting.length < 2 ? 2 - state.waiting.length : 1);
   state.admissionQueue = Array.from({ length: needed }, () => drawPatient()).filter(Boolean);
+  if (undoPoint) recordUndoPoint('Begin next day', undoPoint);
   nextAdmissionCard();
 }
 
 function nextAdmissionCard() {
   state.admissionCard = state.admissionQueue.shift() || null;
+  if (state.admissionCard) markHiddenInformationReveal();
   if (!state.admissionCard) beginDiagnosis();
   render();
 }
@@ -587,15 +679,18 @@ function previewAdmission(index) {
   renderWaitingRoom();
   renderAdmissionSource();
   renderBanner();
+  renderUndoControl();
 }
 
 function confirmAdmission() {
   const insertionIndex = state.admissionPreviewIndex;
   if (!state.admissionCard || !Number.isInteger(insertionIndex) || state.phase !== 'admission') return;
+  const undoPoint = captureUndoPoint();
   state.waiting.splice(insertionIndex, 0, state.admissionCard);
   logEvent('Admission', `${state.admissionCard.name} enters the waiting room.`);
   state.admissionCard = null;
   state.admissionPreviewIndex = null;
+  recordUndoPoint('Admission placement', undoPoint);
   nextAdmissionCard();
 }
 
@@ -604,6 +699,7 @@ function cancelAdmissionPreview() {
   state.admissionPreviewIndex = null;
   renderWaitingRoom();
   renderBanner();
+  renderUndoControl();
 }
 
 function calculateDiagnosis(waiting = state.waiting) {
@@ -644,11 +740,13 @@ function returnDiagnosisCube(patientId, zone) {
   if (state.phase !== 'diagnosis' || !state.diagnosis[patientId]?.[zone]?.active) return;
   const key = cubeKey(patientId, zone);
   if (!state.cubes[key]) return;
+  const undoPoint = captureUndoPoint();
   delete state.cubes[key];
   state.treatmentCubes += 1;
   const patient = state.waiting.find((item) => item.id === patientId);
   state.message = `Treatment Cube returned from ${patient?.name || 'the Patient'} to supply.`;
   logEvent('Diagnosis', `${patient?.name || 'Patient'} returned a Treatment Cube to supply.`);
+  recordUndoPoint('Return a Treatment Cube', undoPoint);
   render();
 }
 
@@ -667,10 +765,13 @@ function beginDiagnosis() {
 
 function startWork() {
   if (state.phase !== 'diagnosis') return;
+  const undoPoint = captureUndoPoint();
   state.phase = 'work';
   state.rolledDice = state.dicePool.map((die) => ({ ...die, value: rollDie(), status: 'available' }));
   state.message = 'Select a die. Then click a highlighted Staff card, equipment action, or ailment.';
   logEvent('Work', `Rolled ${state.rolledDice.map(dieLabel).join(', ')}.`);
+  if (state.rolledDice.length) markHiddenInformationReveal();
+  else recordUndoPoint('Start Work', undoPoint);
   render();
 }
 
@@ -750,6 +851,7 @@ function confirmWorkAction() {
   const pending = state.pendingWorkAction;
   const die = pending && state.rolledDice.find((item) => item.id === pending.dieId);
   if (state.phase !== 'work' || !pending || state.pendingStaffActivation || !die || die.status !== 'available') return;
+  const undoPoint = captureUndoPoint();
   if (pending.type === 'maintenance') {
     if (state.maintenance || state.wear[die.color] <= 1) return;
     state.maintenance = { dieId: die.id, color: die.color };
@@ -766,6 +868,7 @@ function confirmWorkAction() {
   } else return;
   state.pendingWorkAction = null;
   selectedDieId = null;
+  recordUndoPoint(pending.type === 'maintenance' ? 'Maintenance' : 'Equipment upgrade', undoPoint);
   render();
 }
 
@@ -773,6 +876,7 @@ function placeTreatment(patientId, zone) {
   const die = selectedDie();
   const patient = state.waiting.find((item) => item.id === patientId);
   if (!die || die.status !== 'available' || !patient || state.phase !== 'work' || !canTreat(die, patient, zone)) return;
+  const undoPoint = captureUndoPoint();
   die.status = 'treatment';
   state.treatments.push({ dieId: die.id, patientId: patient.id, zone });
   selectedDieId = null;
@@ -781,6 +885,7 @@ function placeTreatment(patientId, zone) {
   state.pendingTreatment = null;
   state.message = `${dieLabel(die)} placed on ${patient.name}. Undo it on the ailment if needed.`;
   logEvent('Treatment', `${dieLabel(die)} assigned to ${patient.name}.`);
+  recordUndoPoint('Treatment placement', undoPoint);
   render();
 }
 
@@ -800,6 +905,7 @@ function undoTreatment(patientId, zone) {
   if (state.phase !== 'work') return;
   const treatmentIndex = state.treatments.findIndex((treatment) => treatment.patientId === patientId && treatment.zone === zone);
   if (treatmentIndex < 0) return;
+  const undoPoint = captureUndoPoint();
   const [treatment] = state.treatments.splice(treatmentIndex, 1);
   const die = state.rolledDice.find((item) => item.id === treatment.dieId);
   if (die) die.status = 'available';
@@ -807,6 +913,7 @@ function undoTreatment(patientId, zone) {
   state.pendingTreatment = null;
   state.message = 'Die returned to the dice tray. Choose another destination or leave it unassigned.';
   logEvent('Treatment', `${die ? dieLabel(die) : 'Die'} placement undone.`);
+  recordUndoPoint('Treatment removal', undoPoint);
   render();
 }
 
@@ -912,6 +1019,9 @@ function finishStaffAction(message) {
   state.message = message;
   logEvent('Staff', message);
   state.staffAction = null;
+  if (deferredUndoPoint) recordUndoPoint(deferredUndoLabel || 'Staff action', deferredUndoPoint);
+  deferredUndoPoint = null;
+  deferredUndoLabel = null;
   render();
 }
 
@@ -921,6 +1031,7 @@ function confirmLabTechReroll() {
   const selected = new Set(action.selectedDieIds || []);
   const dice = availableDice().filter((die) => selected.has(die.id));
   for (const die of dice) die.value = rollDie();
+  if (dice.length) markHiddenInformationReveal();
   finishStaffAction(`Lab Tech rerolled ${dice.length} unassigned die${dice.length === 1 ? '' : 's'}.`);
 }
 
@@ -929,6 +1040,8 @@ function cancelStaffAction() {
   const activatingStaff = state.staffAction.staff;
   const activatingDie = state.rolledDice.find((die) => die.id === state.staffAction.activatorDieId);
   state.staffAction = null;
+  deferredUndoPoint = null;
+  deferredUndoLabel = null;
   if (activatingStaff) state.staffUsed = state.staffUsed.filter((id) => id !== activatingStaff.id);
   if (activatingDie) activatingDie.status = 'available';
   state.nurseDragging = false;
@@ -963,6 +1076,8 @@ function confirmStaffActivation() {
     render();
     return;
   }
+  deferredUndoPoint = captureUndoPoint();
+  deferredUndoLabel = `${staff.name} action`;
   selectedDieId = pending.dieId;
   activateStaff(pending.staffId);
 }
@@ -983,6 +1098,7 @@ function confirmNurseMove() {
 
 function resolveWork() {
   if (state.phase !== 'work' || state.staffAction || state.pendingStaffActivation || state.pendingWorkAction || state.pendingTreatment) return;
+  const undoPoint = captureUndoPoint();
   let lostTreatments = 0;
   for (const patient of state.waiting) {
     for (const treatment of state.treatments.filter((item) => item.patientId === patient.id)) {
@@ -1011,6 +1127,7 @@ function resolveWork() {
   state.dischargeQueue = [...state.curedThisRound];
   state.message = state.curedThisRound.length ? `${state.curedThisRound.length} patient${state.curedThisRound.length === 1 ? '' : 's'} left the Waiting Room. Choose whose Thank You to resolve first.` : 'No patient is ready to leave yet.';
   logEvent('Resolution', `${state.treatments.length - lostTreatments} treatment${state.treatments.length - lostTreatments === 1 ? '' : 's'} became cubes${lostTreatments ? `; ${lostTreatments} over-assignment${lostTreatments === 1 ? '' : 's'} had no cube` : ''}.`);
+  recordUndoPoint('Resolve Work', undoPoint);
   if (state.dischargeQueue.length) render();
   else closingTime();
 }
@@ -1038,8 +1155,10 @@ function chooseDischarge(patientId) {
   if (state.phase !== 'discharge' || state.pendingThankYou) return;
   const index = state.dischargeQueue.findIndex((patient) => patient.id === patientId);
   if (index < 0) return;
+  const undoPoint = captureUndoPoint();
   const [patient] = state.dischargeQueue.splice(index, 1);
   state.pendingThankYou = patient;
+  let revealedHiddenInformation = false;
   state.rearrangeOrder = state.pendingThankYou?.thankYou === 'Waiting Room' ? state.waiting.map((patient) => patient.id) : [];
   state.patientDeckOrder = state.pendingThankYou?.thankYou === 'Patient Deck' ? patientDeckPreview().map((patient) => patient.id) : [];
   if (state.pendingThankYou?.thankYou === 'Hire') {
@@ -1048,9 +1167,18 @@ function chooseDischarge(patientId) {
     if (offer) {
       state.staffRoom.push(offer);
       logEvent('Hire', `${offer.name} was drawn from the Staff Deck and added to the Staff Room.`);
+      markHiddenInformationReveal();
+      revealedHiddenInformation = true;
     } else {
       logEvent('Hire', 'The Staff Deck was empty; no staff card was added.');
     }
+  }
+  if (state.pendingThankYou?.thankYou === 'Patient Deck' && patientDeckPreview().length) {
+    markHiddenInformationReveal();
+    revealedHiddenInformation = true;
+  }
+  if (!revealedHiddenInformation) {
+    recordUndoPoint('Choose Thank You order', undoPoint);
   }
   render();
 }
@@ -1073,6 +1201,9 @@ function completePendingDischarge(skipped = false) {
 }
 
 function skipThankYou() {
+  if (!state.pendingThankYou) return;
+  const undoPoint = captureUndoPoint();
+  recordUndoPoint('Skip Thank You', undoPoint);
   completePendingDischarge(true);
 }
 
@@ -1080,8 +1211,10 @@ function skipQueuedThankYou(patientId) {
   if (state.phase !== 'discharge' || state.pendingThankYou) return;
   const index = state.dischargeQueue.findIndex((patient) => patient.id === patientId);
   if (index < 0) return;
+  const undoPoint = captureUndoPoint();
   [state.pendingThankYou] = state.dischargeQueue.splice(index, 1);
-  skipThankYou();
+  recordUndoPoint('Skip queued Thank You', undoPoint);
+  completePendingDischarge(true);
 }
 
 function resolveThankYou() {
@@ -1098,8 +1231,10 @@ function confirmRearrange() {
   if (state.pendingThankYou?.thankYou !== 'Waiting Room' || state.rearrangeOrder.length !== state.waiting.length) return;
   const ordered = state.rearrangeOrder.map((id) => state.waiting.find((patient) => patient.id === id));
   if (ordered.some((patient) => !patient)) return;
+  const undoPoint = captureUndoPoint();
   state.waiting = ordered;
   logEvent('Thank You', 'Waiting Room rearranged. Matching ailments update immediately; cubes on inactive zones remain until the next Diagnosis.');
+  recordUndoPoint('Waiting Room rearrangement', undoPoint);
   resolveThankYou();
 }
 
@@ -1125,8 +1260,19 @@ function confirmPatientDeck() {
   if (!preview.length || preview.length !== patientDeckPreview().length) return;
   const ordered = preview;
   if (ordered.some((patient) => !patient)) return;
+  const undoPoint = captureUndoPoint();
   state.patientDeck = [...state.patientDeck.slice(0, -preview.length), ...ordered.reverse()];
   logEvent('Thank You', `The top ${preview.length} Patient Deck card${preview.length === 1 ? '' : 's'} were rearranged.`);
+  recordUndoPoint('Patient Deck rearrangement', undoPoint);
+  resolveThankYou();
+}
+
+function repairThankYouEquipment(color) {
+  if (state.pendingThankYou?.thankYou !== 'Repair' || !COLORS[color]) return;
+  const undoPoint = captureUndoPoint();
+  state.wear[color] = Math.max(1, state.wear[color] - 2);
+  logEvent('Repair', `${colorName(color)} equipment is now ${wearLabel(state.wear[color])}.`);
+  recordUndoPoint('Equipment repair', undoPoint);
   resolveThankYou();
 }
 
@@ -1162,9 +1308,11 @@ function chooseInitialStaff(id) {
   const chosen = state.staffOffer.find((staff) => staff.id === id);
   const rejected = state.staffOffer.find((staff) => staff.id !== id);
   if (!chosen) return;
+  const undoPoint = captureUndoPoint();
   state.staffRoom = [chosen];
   state.staffOffer = [];
   logEvent('Setup', `${chosen.name} joins the Staff Room.${rejected ? ` ${rejected.name} is removed from this game.` : ''}`);
+  recordUndoPoint('Choose starting Staff', undoPoint);
   beginRound();
 }
 
@@ -1172,13 +1320,17 @@ function discardHiredStaff(staffId) {
   if (state.pendingThankYou?.thankYou !== 'Hire' || state.staffRoom.length <= 2) return;
   const index = state.staffRoom.findIndex((staff) => staff.id === staffId);
   if (index < 0) return;
+  const undoPoint = captureUndoPoint();
   const [discarded] = state.staffRoom.splice(index, 1);
   logEvent('Hire', `${discarded.name} was removed from this game.`);
+  recordUndoPoint('Remove Staff for Hire', undoPoint);
   render();
 }
 
 function confirmHireStaff() {
   if (state.pendingThankYou?.thankYou !== 'Hire' || state.staffRoom.length > 2) return;
+  const undoPoint = captureUndoPoint();
+  recordUndoPoint('Complete Hire', undoPoint);
   resolveThankYou();
 }
 
@@ -1207,6 +1359,7 @@ function render() {
   renderDiceTray();
   renderEquipment();
   renderLog();
+  renderUndoControl();
   renderPrimaryAction();
   renderBanner();
 }
@@ -1551,6 +1704,7 @@ document.addEventListener('click', (event) => {
   const action = target.dataset.action;
   const value = target.dataset.value;
   if (action === 'new-game') openNewGameDialog();
+  else if (action === 'undo') undoLastDecision();
   else if (action === 'new-game-random') { newGame(); closeDialog('new-game-dialog'); }
   else if (action === 'new-game-seeded') startNewGameWithEnteredSeed();
   else if (action === 'close-new-game') closeDialog('new-game-dialog');
@@ -1582,7 +1736,7 @@ document.addEventListener('click', (event) => {
   else if (action === 'reset-rearrange') resetRearrangeOrder();
   else if (action === 'confirm-patient-deck') confirmPatientDeck();
   else if (action === 'reset-patient-deck') resetPatientDeckOrder();
-  else if (action === 'repair') { state.wear[value] = Math.max(1, state.wear[value] - 2); logEvent('Repair', `${colorName(value)} equipment is now ${wearLabel(state.wear[value])}.`); resolveThankYou(); }
+  else if (action === 'repair') repairThankYouEquipment(value);
   else if (action === 'discard-hire-staff') discardHiredStaff(value);
   else if (action === 'confirm-hire-staff') confirmHireStaff();
 });
@@ -1722,6 +1876,7 @@ function finishRearrangeDrag() {
   state.message = 'Waiting Room order preview updated. Drag again or confirm the order.';
   renderWaitingRoom();
   renderBanner();
+  renderUndoControl();
 }
 
 document.addEventListener('pointerdown', (event) => {
@@ -1742,6 +1897,7 @@ document.addEventListener('pointerdown', (event) => {
   updateRearrangeDragPosition(event);
   renderWaitingRoom();
   renderBanner();
+  renderUndoControl();
 });
 
 document.addEventListener('pointermove', (event) => {
@@ -1792,6 +1948,7 @@ function finishPatientDeckDrag() {
   state.message = 'Patient Deck order preview updated. Drag again or confirm the order.';
   renderPatientDeckPreview();
   renderBanner();
+  renderUndoControl();
 }
 
 document.addEventListener('pointerdown', (event) => {
@@ -1812,6 +1969,7 @@ document.addEventListener('pointerdown', (event) => {
   updatePatientDeckDragPosition(event);
   renderPatientDeckPreview();
   renderBanner();
+  renderUndoControl();
 });
 
 document.addEventListener('pointermove', (event) => {
@@ -1874,6 +2032,7 @@ function finishAdmissionDrag() {
   renderWaitingRoom();
   renderAdmissionSource();
   renderBanner();
+  renderUndoControl();
 }
 
 document.addEventListener('pointerdown', (event) => {
@@ -1890,6 +2049,7 @@ document.addEventListener('pointerdown', (event) => {
   renderWaitingRoom();
   renderAdmissionSource();
   renderBanner();
+  renderUndoControl();
 });
 
 document.addEventListener('pointermove', (event) => {

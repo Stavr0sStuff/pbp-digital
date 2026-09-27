@@ -8,7 +8,7 @@
       name="description"
       content="A local digital tabletop for the solitaire dice game Please Be Patient."
     />
-    <link rel="stylesheet" href="styles.css?v=20260924-03" />
+    <link rel="stylesheet" href="styles.css?v=20260927-02" />
   </head>
   <body>
     <div class="app-shell">
@@ -24,6 +24,7 @@
           <div id="primary-action" class="top-primary-action"></div>
         </div>
         <div class="topbar-actions">
+          <button id="undo-button" class="button button-primary undo-button" data-action="undo" disabled title="No decisions to undo since the latest reveal">Undo</button>
           <span id="discharged-count" class="pill discharged-pill" aria-live="polite">Patients Discharged: 0</span>
           <span id="round-badge" class="pill">Not started</span>
           <span class="pill seed-pill">Seed <span id="seed-value">—</span></span>
