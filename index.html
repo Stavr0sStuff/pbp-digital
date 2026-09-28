@@ -8,7 +8,7 @@
       name="description"
       content="A local digital tabletop for the solitaire dice game Please Be Patient."
     />
-    <link rel="stylesheet" href="styles.css?v=20260927-02" />
+    <link rel="stylesheet" href="styles.css?v=20260928-08" />
   </head>
   <body>
     <div class="app-shell">
@@ -52,6 +52,7 @@
             <span id="discard-count" class="sr-only">0</span>
             <span id="patient-deck-label" class="sr-only">face down</span>
           </section>
+          <div id="patient-reserve"></div>
         </aside>
 
         <section class="table-area">
@@ -102,6 +103,17 @@
         <label class="dialog-label" for="seed-input">Seed
           <input id="seed-input" class="dialog-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0–4294967295" />
         </label>
+        <label class="variant-checkbox" for="quiet-rotation-enabled">
+          <input id="quiet-rotation-enabled" type="checkbox" />
+          <span>A Quiet Rotation (easy variant)</span>
+        </label>
+        <label id="quiet-rotation-count-option" class="dialog-label variant-count" for="quiet-rotation-count" hidden>
+          Patients to reveal at start
+          <select id="quiet-rotation-count" class="dialog-input" aria-label="Number of reserved Patients" disabled>
+            <option value="1">1 Patient</option>
+            <option value="2">2 Patients</option>
+          </select>
+        </label>
         <p id="new-game-error" class="setup-error" role="alert" aria-live="polite"></p>
         <div class="dialog-actions">
           <button class="button button-quiet" data-action="close-new-game">Cancel</button>
@@ -123,6 +135,6 @@
         </div>
       </div>
     </dialog>
-    <script src="app.js?v=20260924-03"></script>
+    <script src="app.js?v=20260928-08"></script>
   </body>
 </html>

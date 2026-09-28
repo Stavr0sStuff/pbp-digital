@@ -197,7 +197,10 @@ function createInitialState(seed) {
     patientDeck: [],
     staffDeck: [],
     waiting: [],
+    reservedPatients: [],
+    reservedPatientOffers: [],
     discard: [],
+    reserveThankYous: [],
     staffRoom: [],
     staffOffer: [],
     dicePool: [{ id: 'R1', color: 'R' }, { id: 'Y1', color: 'Y' }, { id: 'B1', color: 'B' }],
@@ -226,6 +229,8 @@ function createInitialState(seed) {
     curedThisRound: [],
     dischargeQueue: [],
     pendingThankYou: null,
+    pendingThankYouSource: null,
+    variants: { quietRotation: { enabled: false, patientCount: 1 } },
     staffAction: null,
     pendingStaffActivation: null,
     pendingWorkAction: null,
@@ -247,13 +252,20 @@ function createInitialState(seed) {
   };
 }
 
-function newGame(seedValue) {
+function newGame(seedValue, variantOptions = {}) {
   const seed = seedValue === undefined ? randomSeed() : validateSeedValue(seedValue);
   const nextRandom = mulberry32(seed);
   const nextState = createInitialState(seed);
   nextState.patientDeck = shuffle(PATIENTS.map(clone), nextRandom);
   nextState.staffDeck = shuffle(STAFF.map(clone), nextRandom);
   nextState.waiting.push(nextState.patientDeck.pop(), nextState.patientDeck.pop());
+  const quietRotation = variantOptions.quietRotation || {};
+  const reservedPatientCount = quietRotation.enabled ? (quietRotation.patientCount === 2 ? 2 : 1) : 0;
+  nextState.reservedPatients = Array.from({ length: reservedPatientCount }, () => nextState.patientDeck.pop());
+  nextState.variants = {
+    ...clone(variantOptions),
+    quietRotation: { enabled: reservedPatientCount > 0, patientCount: reservedPatientCount || 1 },
+  };
   nextState.staffOffer.push(nextState.staffDeck.pop(), nextState.staffDeck.pop());
   state = nextState;
   gameRandom = nextRandom;
@@ -307,7 +319,7 @@ function buildSetupCandidate(data) {
   const random = mulberry32(seed);
 
   const patientLocations = new Map();
-  const patientData = setupObject(setup.patients, '$.patients', ['waiting', 'discard', 'deckTop', 'arrival', 'admissionQueue', 'dischargeQueue'], ['waiting']);
+  const patientData = setupObject(setup.patients, '$.patients', ['waiting', 'reserved', 'reserveThankYous', 'discard', 'deckTop', 'arrival', 'admissionQueue', 'dischargeQueue'], ['waiting']);
   if (phase === 'admission' && !Object.hasOwn(patientData, 'arrival')) setupError('$.patients.arrival', 'required during Admission.');
   if (phase !== 'admission' && (Object.hasOwn(patientData, 'arrival') || Object.hasOwn(patientData, 'admissionQueue'))) {
     setupError('$.patients', 'arrival and admissionQueue are only valid during Admission.');
@@ -321,6 +333,22 @@ function buildSetupCandidate(data) {
   const discard = Object.hasOwn(patientData, 'discard')
     ? setupCardList(patientData.discard, '$.patients.discard', patientCards, patientLocations)
     : [];
+  const reservedPatients = Object.hasOwn(patientData, 'reserved')
+    ? setupCardList(patientData.reserved, '$.patients.reserved', patientCards, patientLocations)
+    : [];
+  const reserveThankYous = Object.hasOwn(patientData, 'reserveThankYous')
+    ? setupArray(patientData.reserveThankYous, '$.patients.reserveThankYous')
+    : [];
+  const reserveThankYouIds = new Set();
+  const discardedPatientIds = new Set(discard.map((patient) => patient.id));
+  for (const [index, id] of reserveThankYous.entries()) {
+    const path = `$.patients.reserveThankYous[${index}]`;
+    if (typeof id !== 'string' || !patientCards.has(id)) setupError(path, `unknown card ID ${JSON.stringify(id)}.`);
+    if (!discardedPatientIds.has(id)) setupError(path, `${id} must be listed in patients.discard.`);
+    if (reserveThankYouIds.has(id)) setupError(path, `${id} is listed more than once.`);
+    reserveThankYouIds.add(id);
+  }
+  if (reservedPatients.length + reserveThankYouIds.size > 2) setupError('$.patients.reserved', 'the active reserve and claimed Thank Yous may total at most two Patients.');
   const patientTop = Object.hasOwn(patientData, 'deckTop')
     ? setupCardList(patientData.deckTop, '$.patients.deckTop', patientCards, patientLocations)
     : [];
@@ -333,7 +361,7 @@ function buildSetupCandidate(data) {
   const dischargeQueue = Object.hasOwn(patientData, 'dischargeQueue')
     ? setupCardList(patientData.dischargeQueue, '$.patients.dischargeQueue', patientCards, patientLocations)
     : [];
-  if (phase === 'discharge' && dischargeQueue.length === 0) setupError('$.patients.dischargeQueue', 'must not be empty during Discharge.');
+  if (phase === 'discharge' && dischargeQueue.length === 0 && reservedPatients.length === 0) setupError('$.patients.dischargeQueue', 'must not be empty during Discharge unless a reserved Patient is available.');
   const patientRemaining = PATIENTS.filter((patient) => !patientLocations.has(patient.id)).map(clone);
   const patientDeck = [...shuffle(patientRemaining, random), ...patientTop.reverse()];
 
@@ -436,7 +464,12 @@ function buildSetupCandidate(data) {
   candidateState.patientDeck = patientDeck;
   candidateState.staffDeck = staffDeck;
   candidateState.waiting = waiting;
+  candidateState.reservedPatients = reservedPatients;
+  candidateState.reservedPatientOffers = phase === 'discharge' ? [...reservedPatients] : [];
   candidateState.discard = discard;
+  candidateState.reserveThankYous = [...reserveThankYouIds];
+  const quietRotationPatientCount = reservedPatients.length + reserveThankYouIds.size;
+  candidateState.variants.quietRotation = { enabled: quietRotationPatientCount > 0, patientCount: quietRotationPatientCount || 1 };
   candidateState.staffRoom = staffRoom;
   candidateState.staffOffer = [];
   candidateState.dicePool = dicePool;
@@ -558,7 +591,26 @@ function installSetupJSON(text) {
 function openNewGameDialog() {
   $('#new-game-error').textContent = '';
   $('#seed-input').value = '';
+  $('#quiet-rotation-enabled').checked = false;
+  $('#quiet-rotation-count').value = '1';
+  updateQuietRotationControls();
   $('#new-game-dialog').showModal();
+}
+
+function updateQuietRotationControls() {
+  const enabled = $('#quiet-rotation-enabled').checked;
+  const count = $('#quiet-rotation-count');
+  count.disabled = !enabled;
+  $('#quiet-rotation-count-option').hidden = !enabled;
+}
+
+function selectedGameVariants() {
+  return {
+    quietRotation: {
+      enabled: $('#quiet-rotation-enabled').checked,
+      patientCount: Number($('#quiet-rotation-count').value),
+    },
+  };
 }
 
 function openLoadSetupDialog() {
@@ -585,7 +637,7 @@ function startNewGameWithEnteredSeed() {
     return;
   }
   try {
-    newGame(seed);
+    newGame(seed, selectedGameVariants());
     closeDialog('new-game-dialog');
   } catch (cause) {
     error.textContent = cause.message;
@@ -1125,10 +1177,11 @@ function resolveWork() {
   const curedIds = new Set(state.curedThisRound.map((patient) => patient.id));
   state.waiting = state.waiting.filter((patient) => !curedIds.has(patient.id));
   state.dischargeQueue = [...state.curedThisRound];
+  state.reservedPatientOffers = [...state.reservedPatients];
   state.message = state.curedThisRound.length ? `${state.curedThisRound.length} patient${state.curedThisRound.length === 1 ? '' : 's'} left the Waiting Room. Choose whose Thank You to resolve first.` : 'No patient is ready to leave yet.';
   logEvent('Resolution', `${state.treatments.length - lostTreatments} treatment${state.treatments.length - lostTreatments === 1 ? '' : 's'} became cubes${lostTreatments ? `; ${lostTreatments} over-assignment${lostTreatments === 1 ? '' : 's'} had no cube` : ''}.`);
   recordUndoPoint('Resolve Work', undoPoint);
-  if (state.dischargeQueue.length) render();
+  if (state.dischargeQueue.length || state.reservedPatients.length) render();
   else closingTime();
 }
 
@@ -1157,7 +1210,23 @@ function chooseDischarge(patientId) {
   if (index < 0) return;
   const undoPoint = captureUndoPoint();
   const [patient] = state.dischargeQueue.splice(index, 1);
+  beginThankYouResolution(patient, 'discharged', undoPoint);
+}
+
+function chooseReservedDischarge(patientId) {
+  if (state.phase !== 'discharge' || state.pendingThankYou) return;
+  const offerIndex = state.reservedPatientOffers.findIndex((patient) => patient.id === patientId);
+  const reserveIndex = state.reservedPatients.findIndex((patient) => patient.id === patientId);
+  if (offerIndex < 0 || reserveIndex < 0) return;
+  const undoPoint = captureUndoPoint();
+  state.reservedPatientOffers.splice(offerIndex, 1);
+  const [patient] = state.reservedPatients.splice(reserveIndex, 1);
+  beginThankYouResolution(patient, 'reserved', undoPoint);
+}
+
+function beginThankYouResolution(patient, source, undoPoint) {
   state.pendingThankYou = patient;
+  state.pendingThankYouSource = source;
   let revealedHiddenInformation = false;
   state.rearrangeOrder = state.pendingThankYou?.thankYou === 'Waiting Room' ? state.waiting.map((patient) => patient.id) : [];
   state.patientDeckOrder = state.pendingThankYou?.thankYou === 'Patient Deck' ? patientDeckPreview().map((patient) => patient.id) : [];
@@ -1186,14 +1255,25 @@ function chooseDischarge(patientId) {
 function completePendingDischarge(skipped = false) {
   const patient = state.pendingThankYou;
   if (!patient) return;
-  state.discard.push(patient);
-  logEvent('Discharge', `${patient.name} left the hospital after their Thank You was ${skipped ? 'skipped' : 'resolved'}.`);
+  const source = state.pendingThankYouSource;
+  if (source === 'reserved' && skipped) {
+    state.reservedPatients.push(patient);
+  } else {
+    state.discard.push(patient);
+    if (source === 'reserved') state.reserveThankYous.push(patient.id);
+  }
+  logEvent(source === 'reserved' ? 'Thank You' : 'Discharge', source === 'reserved'
+    ? `${patient.name}'s reserved Thank You was ${skipped ? 'skipped' : 'resolved'}.`
+    : `${patient.name} left the hospital after their Thank You was ${skipped ? 'skipped' : 'resolved'}.`);
   state.pendingThankYou = null;
+  state.pendingThankYouSource = null;
   clearThankYouDragState();
   state.rearrangeOrder = [];
   state.patientDeckOrder = [];
-  if (state.dischargeQueue.length) {
-    state.message = `Choose the next Patient whose Thank You you want to resolve.`;
+  if (state.dischargeQueue.length || state.reservedPatientOffers.length) {
+    state.message = state.dischargeQueue.length
+      ? 'Choose the next Patient whose Thank You you want to resolve.'
+      : 'Choose a Thank You to resolve, or finish Discharge.';
     render();
   } else {
     closingTime();
@@ -1213,8 +1293,16 @@ function skipQueuedThankYou(patientId) {
   if (index < 0) return;
   const undoPoint = captureUndoPoint();
   [state.pendingThankYou] = state.dischargeQueue.splice(index, 1);
+  state.pendingThankYouSource = 'discharged';
   recordUndoPoint('Skip queued Thank You', undoPoint);
   completePendingDischarge(true);
+}
+
+function finishDischarge() {
+  if (state.phase !== 'discharge' || state.pendingThankYou || state.dischargeQueue.length) return;
+  const undoPoint = captureUndoPoint();
+  recordUndoPoint('Finish Discharge', undoPoint);
+  closingTime();
 }
 
 function resolveThankYou() {
@@ -1279,6 +1367,7 @@ function repairThankYouEquipment(color) {
 function closingTime() {
   state.phase = 'closing';
   state.pendingThankYou = null;
+  state.pendingThankYouSource = null;
   selectedDieId = null;
   if (state.waiting.length === 0 && state.patientDeck.length === 0) {
     state.status = 'won';
@@ -1341,7 +1430,9 @@ function render() {
   document.body.dataset.status = state.status;
   $('#seed-value').textContent = String(state.seed);
   $('#round-badge').textContent = state.status === 'won' ? 'Victory' : state.status === 'lost' ? 'Shift lost' : state.round ? `Day ${state.round}` : 'Setup';
-  $('#discharged-count').textContent = `Patients Discharged: ${state.discard.length}`;
+  const reserveThankYouIds = new Set(state.reserveThankYous);
+  const dischargedCount = state.discard.filter((patient) => !reserveThankYouIds.has(patient.id)).length;
+  $('#discharged-count').textContent = `Patients Discharged: ${dischargedCount}`;
   $('#patient-deck-count').textContent = `${state.patientDeck.length} left`;
   $('.patient-deck-card').classList.toggle('empty', state.patientDeck.length === 0);
   $('#patient-deck-label').textContent = state.patientDeck.length ? 'face down' : 'empty';
@@ -1355,6 +1446,7 @@ function render() {
   renderStaffRoom();
   renderAdmissionSource();
   renderWaitingRoom();
+  renderReservedPatients();
   syncPhysicalCardScale();
   renderDiceTray();
   renderEquipment();
@@ -1388,6 +1480,7 @@ function renderPrimaryAction() {
   if (state.status === 'won' || state.status === 'lost') button = '<button class="button button-primary" data-action="new-game">Start a fresh shift</button>';
   else if (state.phase === 'diagnosis') button = '<button class="button button-primary" data-action="start-work">Roll dice &amp; work</button>';
   else if (state.phase === 'work') button = '<button class="button button-primary" data-action="resolve-work"' + (state.staffAction || state.pendingStaffActivation || state.pendingWorkAction || state.pendingTreatment ? ' disabled' : '') + '>Resolve the work day</button>';
+  else if (state.phase === 'discharge' && !state.pendingThankYou && !state.dischargeQueue.length && state.reservedPatientOffers.length) button = '<button class="button button-primary" data-action="finish-discharge">Finish Discharge</button>';
   else if (state.phase === 'closing') button = '<button class="button button-primary" data-action="next-day">Begin next day</button>';
   target.innerHTML = button;
 }
@@ -1633,11 +1726,42 @@ function renderWaitingRoom() {
   const repairControls = repairMode
     ? `<div class="repair-thank-you-controls"><div class="repair-thank-you-actions">${Object.entries(COLORS).map(([color, info]) => `<button class="button repair-choice repair-${info.className}" data-action="repair" data-value="${color}">Repair ${info.name}</button>`).join('')}</div><button class="button button-quiet" data-action="skip-thank-you">Skip</button></div>`
     : '';
-  const dischargeChoices = state.phase === 'discharge' && !state.pendingThankYou && state.dischargeQueue.length
-    ? `<section class="discharge-choices" aria-label="Choose or skip a Thank You"><strong>Choose or skip each Thank You</strong><div class="discharge-choice-row">${state.dischargeQueue.map((patient) => `<div class="discharge-choice-option"><button class="discharge-choice" data-action="choose-discharge" data-value="${patient.id}" aria-label="Resolve ${escapeHtml(patient.name)}'s Thank You: ${escapeHtml(patient.thankYou)}"><img draggable="false" src="${cardAsset(patient.image)}" alt="" /><span><b>${escapeHtml(patient.name)}</b><small class="discharge-choice-thankyou"><img draggable="false" src="${thankYouAsset(patient.thankYouImage)}" alt="" />${escapeHtml(patient.thankYou)}</small></span></button><button class="button button-quiet button-small" data-action="skip-queued-thankyou" data-value="${patient.id}">Skip Thank You</button></div>`).join('')}</div></section>`
+  const dischargePatients = state.phase === 'discharge' && !state.pendingThankYou
+    ? [
+      ...state.dischargeQueue.map((patient) => ({ patient, source: 'discharged' })),
+      ...state.reservedPatientOffers.map((patient) => ({ patient, source: 'reserved' })),
+    ]
+    : [];
+  const dischargeChoices = dischargePatients.length
+    ? `<section class="discharge-choices" aria-label="Choose or skip a Thank You"><strong>Choose or skip each Thank You</strong><div class="discharge-choice-row">${dischargePatients.map(({ patient, source }) => renderDischargeChoice(patient, source)).join('')}</div></section>`
     : '';
   $('#waiting-room').innerHTML = `<div class="waiting-slots">${slots.join('')}</div>${rearrangeControls}${repairControls}${dischargeChoices}`;
   renderPatientDeckPreview();
+}
+
+function renderDischargeChoice(patient, source) {
+  const reserved = source === 'reserved';
+  const chooseAction = reserved ? 'choose-reserved-discharge' : 'choose-discharge';
+  const footerAction = reserved
+    ? '<span class="discharge-choice-source">Reserved</span>'
+    : `<button class="button button-quiet button-small" data-action="skip-queued-thankyou" data-value="${patient.id}">Skip Thank You</button>`;
+  return `<div class="discharge-choice-option${reserved ? ' reserved' : ''}"><button class="discharge-choice" data-action="${chooseAction}" data-value="${patient.id}" aria-label="Resolve ${escapeHtml(patient.name)}'s Thank You: ${escapeHtml(patient.thankYou)}"><img draggable="false" src="${cardAsset(patient.image)}" alt="" /><span><b>${escapeHtml(patient.name)}</b><small class="discharge-choice-thankyou"><img draggable="false" src="${thankYouAsset(patient.thankYouImage)}" alt="" />${escapeHtml(patient.thankYou)}</small></span></button><div class="discharge-choice-footer">${footerAction}</div></div>`;
+}
+
+function renderReservedPatients() {
+  const target = $('#patient-reserve');
+  if (!target) return;
+  if (!state.reservedPatients.length) {
+    target.innerHTML = '';
+    return;
+  }
+  const cards = state.reservedPatients.map((patient) => {
+    const image = `<img draggable="false" src="${cardAsset(patient.image)}" alt="${escapeHtml(patient.name)}" />`;
+    const thankYou = `<div class="reserved-patient-thankyou"><img draggable="false" src="${thankYouAsset(patient.thankYouImage)}" alt="" /><span><small>Thank You</small><strong>${escapeHtml(patient.thankYou)}</strong></span></div>`;
+    const card = `<div class="reserved-patient-card">${image}${thankYou}</div>`;
+    return `<article class="reserved-patient-option">${card}</article>`;
+  }).join('');
+  target.innerHTML = `<section class="patient-reserve-area" aria-label="Reserved Patients"><div class="patient-reserve-heading"><h3>Patient Reserve</h3></div><div class="patient-reserve-cards">${cards}</div></section>`;
 }
 
 function renderPatientDeckPreview() {
@@ -1700,12 +1824,13 @@ function renderLog() {
 
 document.addEventListener('click', (event) => {
   const target = event.target.closest('[data-action]');
-  if (!target || !state) return;
+  if (!target) return;
   const action = target.dataset.action;
+  if (!state && !['new-game', 'new-game-random', 'new-game-seeded', 'close-new-game', 'open-load-setup', 'close-load-setup'].includes(action)) return;
   const value = target.dataset.value;
   if (action === 'new-game') openNewGameDialog();
   else if (action === 'undo') undoLastDecision();
-  else if (action === 'new-game-random') { newGame(); closeDialog('new-game-dialog'); }
+  else if (action === 'new-game-random') { newGame(undefined, selectedGameVariants()); closeDialog('new-game-dialog'); }
   else if (action === 'new-game-seeded') startNewGameWithEnteredSeed();
   else if (action === 'close-new-game') closeDialog('new-game-dialog');
   else if (action === 'open-load-setup') openLoadSetupDialog();
@@ -1729,7 +1854,9 @@ document.addEventListener('click', (event) => {
   else if (action === 'cancel-staff') cancelStaffAction();
   else if (action === 'choose-initial-staff') chooseInitialStaff(value);
   else if (action === 'choose-discharge') chooseDischarge(value);
+  else if (action === 'choose-reserved-discharge') chooseReservedDischarge(value);
   else if (action === 'skip-queued-thankyou') skipQueuedThankYou(value);
+  else if (action === 'finish-discharge') finishDischarge();
   else if (action === 'staff-choice') handleStaffChoice(value);
   else if (action === 'skip-thank-you') skipThankYou();
   else if (action === 'confirm-rearrange') confirmRearrange();
@@ -1743,6 +1870,7 @@ document.addEventListener('click', (event) => {
 
 document.addEventListener('change', (event) => {
   if (event.target?.id === 'setup-file-input') loadSetupFile(event);
+  else if (event.target?.id === 'quiet-rotation-enabled') updateQuietRotationControls();
 });
 
 function createNurseDragGhost() {
@@ -2077,4 +2205,4 @@ legalZonesToggle.addEventListener('change', () => {
 });
 
 configureSetupControls();
-newGame();
+openNewGameDialog();
