@@ -668,6 +668,23 @@ function configureSetupControls() {
   $('#load-setup-button').hidden = !setupMode;
 }
 
+async function loadAppVersion() {
+  const label = $('#app-version');
+  if (!label) return;
+  try {
+    const response = await fetch('VERSION', { cache: 'no-cache' });
+    if (!response.ok) return;
+    const version = (await response.text()).trim();
+    if (!/^\d+\.\d+\.\d+$/.test(version)) return;
+    label.textContent = `v${version}`;
+    label.setAttribute('aria-label', `Version ${version}`);
+    label.title = `PBP Digital version ${version}`;
+    label.hidden = false;
+  } catch {
+    // Version metadata is optional and must not block starting a game.
+  }
+}
+
 function logEvent(label, message) {
   if (!state) return;
   state.history.unshift({ label, message });
@@ -2204,5 +2221,6 @@ legalZonesToggle.addEventListener('change', () => {
   render();
 });
 
+loadAppVersion();
 configureSetupControls();
 openNewGameDialog();

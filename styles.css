@@ -46,6 +46,9 @@ body::before {
 .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 20px; margin-bottom: 18px; }
 .brand-lockup, .topbar-actions, .section-heading, .waiting-header, .table-footer, .stepper, .queue-meter { display: flex; align-items: center; }
 .brand-lockup { gap: 13px; }
+.brand-copy { display: grid; gap: 2px; min-width: 0; }
+.app-version { color: var(--ink-soft); font: 500 10px/1.2 'DM Mono', monospace; letter-spacing: 0; }
+.app-version[hidden] { display: none; }
 .brand-mark { width: 48px; height: 48px; display: grid; place-items: center; color: white; background: var(--teal); border-radius: 15px 15px 15px 5px; font-size: 28px; box-shadow: var(--shadow-small); transform: rotate(-4deg); }
 .eyebrow { margin: 0 0 5px; color: var(--teal); text-transform: uppercase; letter-spacing: .13em; font: 500 14px/1.2 'DM Mono', monospace; }
 h1, h2, h3, p { margin-top: 0; }
