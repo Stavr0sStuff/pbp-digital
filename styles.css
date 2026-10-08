@@ -9,12 +9,13 @@
   --teal: #1f7475;
   --teal-deep: #155254;
   --teal-wash: #d9eeea;
-  --red: #df654f;
+  --red: #fd3000;
   --red-soft: #f7d7ce;
-  --yellow: #e2bf38;
+  --yellow: #fafab3;
   --yellow-soft: #f8edb8;
-  --blue: #267da1;
+  --blue: #003a82;
   --blue-soft: #d0e5ed;
+  --black: #1e262a;
   --orange: #df8a35;
   --shadow: 0 18px 50px rgba(32, 49, 58, .12);
   --shadow-small: 0 8px 20px rgba(32, 49, 58, .11);
@@ -237,7 +238,7 @@ h3 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
 .zone-button.treatable { pointer-events: auto; cursor: pointer; animation: none; }
 .zone-button.returnable { pointer-events: auto; cursor: pointer; outline: 3px solid var(--orange); outline-offset: 2px; }
 .zone-button.pending-treat { outline: 4px solid var(--orange); outline-offset: 3px; animation: none; }
-.zone-button.has-cube::after { content: ''; position: absolute; top: 50%; right: 0; width: 18px; height: 18px; display: block; border: 3px solid #11191a; border-radius: 4px; background: #303536; box-shadow: 0 2px 8px rgba(32,49,58,.35); transform: translate(50%, -50%); }
+.zone-button.has-cube::after { content: ''; position: absolute; top: 50%; right: 0; width: 18px; height: 18px; display: block; border: 3px solid #11191a; border-radius: 4px; background: var(--black); box-shadow: 0 2px 8px rgba(32,49,58,.35); transform: translate(50%, -50%); }
 .zone-button.c.has-cube::after { right: auto; left: 50%; transform: translate(-50%, -50%); }
 .zone-button.tr.has-cube::after, .zone-button.mr.has-cube::after, .zone-button.br.has-cube::after { right: auto; left: 0; transform: translate(-50%, -50%); }
 .zone-button.undoable { pointer-events: auto; cursor: pointer; }
@@ -281,10 +282,11 @@ h3 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
 .equipment-card-rotated { position: absolute; top: 50%; left: 50%; width: 73.8%; height: 135.5%; transform: translate(-50%, -50%) rotate(-90deg); transform-origin: center; }
 .equipment-card-rotated img { display: block; width: 100%; height: 100%; object-fit: fill; }
 .equipment-marker { position: absolute; z-index: 2; top: var(--marker-top); left: var(--marker-left); width: 20px; height: 20px; display: block; border: 3px solid white; border-radius: 50%; background: var(--marker-color); box-shadow: 0 2px 6px rgba(32,49,58,.42); transform: translate(-50%, -50%); pointer-events: none; }
-.equipment-marker.ooo { width: 20px; height: 20px; border-radius: 5px; background: #2f3835; }
+.equipment-marker-yellow { border-color: #000; }
+.equipment-marker.ooo { width: 20px; height: 20px; border-radius: 5px; background: var(--black); }
 .work-actions p, .setup-offer-note, .supply-card > .muted { display: none; }
 .cube-supply { display: flex; flex-wrap: nowrap; justify-content: center; gap: 5px; width: 282px; min-height: 36px; }
-.cube { flex: 0 0 36px; width: 36px; height: 36px; border: 3px solid #11191a; border-radius: 5px; background: #303536; box-shadow: 0 2px 5px rgba(32,49,58,.28); }
+.cube { flex: 0 0 36px; width: 36px; height: 36px; border: 3px solid #11191a; border-radius: 5px; background: var(--black); box-shadow: 0 2px 5px rgba(32,49,58,.28); }
 .rules-drawer { border-radius: 0; background: transparent; }
 .rules-drawer summary { padding: 5px 0; cursor: pointer; color: var(--teal-deep); font-size: 14px; font-weight: 800; }
 .rules-copy { padding: 0 15px 12px; color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
@@ -331,7 +333,7 @@ h3 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
 .patient-deck-drag-ghost { width: 136px; aspect-ratio: .75; }
 body.rearrange-dragging, body.patient-deck-dragging { cursor: grabbing; user-select: none; }
 .nurse-drag-ghost { position: fixed; z-index: 30; left: 0; top: 0; width: 44px; height: 44px; display: grid; place-items: center; border: 2px solid rgba(255,255,255,.9); border-radius: 9px; background: rgba(48,53,54,.9); box-shadow: 0 10px 20px rgba(32,49,58,.28); pointer-events: none; transform: translate(-50%, -50%) rotate(-4deg); }
-.nurse-drag-ghost-cube { width: 30px; height: 30px; border: 3px solid #11191a; border-radius: 5px; background: #303536; box-shadow: inset 0 0 0 2px rgba(255,255,255,.15); }
+.nurse-drag-ghost-cube { width: 30px; height: 30px; border: 3px solid #11191a; border-radius: 5px; background: var(--black); box-shadow: inset 0 0 0 2px rgba(255,255,255,.15); }
 body.nurse-dragging { cursor: grabbing; user-select: none; }
 .admission-slot-target { position: relative; transition: transform .18s ease, opacity .18s ease, outline .18s ease; }
 .admission-slot-target.dragging-target.valid-target { cursor: copy; }
