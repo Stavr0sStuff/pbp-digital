@@ -1821,7 +1821,7 @@ function renderDiceTray() {
 }
 
 function renderEquipment() {
-  const markerTop = { R: '32.04%', Y: '57.68%', B: '82.93%' };
+  const markerTop = { R: '29.3%', Y: '46.8%', B: '64.2%' };
   const markerLeft = { 1: '16.42%', 2: '27.63%', 3: '38.84%', 4: '50.05%', 5: '61.27%', 6: '72.48%', 7: '83.69%' };
   const markerColor = { R: 'var(--red)', Y: 'var(--yellow)', B: 'var(--blue)' };
   const markers = Object.keys(COLORS).map((color) => `<span class="equipment-marker ${color === 'Y' ? 'equipment-marker-yellow' : ''} ${state.wear[color] >= 7 ? 'ooo' : ''}" style="--marker-top:${markerTop[color]};--marker-left:${markerLeft[Math.min(state.wear[color], 7)]};--marker-color:${markerColor[color]}" title="${colorName(color)} ${wearLabel(state.wear[color])}" aria-label="${colorName(color)} ${wearLabel(state.wear[color])}"></span>`).join('');
